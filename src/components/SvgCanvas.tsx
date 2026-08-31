@@ -149,6 +149,23 @@ export function SvgCanvas({
     }
   }, [svgContent, zones.length]);
 
+  // Keep preview selection aligned with active animated zones only.
+  useEffect(() => {
+    if (!selectedZoneId) return;
+
+    const settings = zoneSettings[selectedZoneId];
+    const isInactive =
+      !!hiddenZoneIds[selectedZoneId] ||
+      !settings ||
+      !!settings.isSolid ||
+      (settings.frameCount !== undefined && settings.frameCount <= 1);
+
+    if (isInactive) {
+      setHoveredZoneId((current) => (current === selectedZoneId ? null : current));
+      onSelectZone(null);
+    }
+  }, [selectedZoneId, hiddenZoneIds, zoneSettings, onSelectZone]);
+
   // Live Scanimation Grating & Wireframe Grid Slices Rendering Overlay
   useEffect(() => {
     if (!svgWrapperRef.current) return;
@@ -188,14 +205,26 @@ export function SvgCanvas({
         }
 
         const isHidden = !!hiddenZoneIds[zone.id];
+        const isSolidForSelection =
+          !!settings?.isSolid ||
+          (settings?.frameCount !== undefined && settings.frameCount <= 1);
+
         if (isHidden) {
           targetShape.setAttribute("opacity", "0.08");
+          targetShape.setAttribute("pointer-events", "none");
           return;
         } else {
           targetShape.setAttribute("opacity", "1");
         }
 
-        if (!settings) return;
+        if (!settings) {
+          targetShape.setAttribute("pointer-events", "none");
+          return;
+        }
+
+        // Hidden and solid/0-1 frame zones must not block clicks from reaching
+        // active animated zones underneath them in preview/select mode.
+        targetShape.setAttribute("pointer-events", isSolidForSelection ? "none" : "auto");
 
         const fc = settings.frameCount || 6;
         const step = fc - minFrameCount;
