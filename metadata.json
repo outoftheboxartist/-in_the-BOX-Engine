@@ -1,0 +1,8 @@
+{
+  "name": "CRASH  [IN_THE] Box Engine",
+  "description": "Map SVG zones and configure directional vectors to design multi-directional scanimation and parallax illusion artwork.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

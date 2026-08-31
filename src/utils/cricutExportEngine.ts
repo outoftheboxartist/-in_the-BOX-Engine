@@ -1,0 +1,354 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import { ZoneSettings, SVGZoneInfo, ZoneArtwork } from "../types";
+import { generateLinesData, clipLineToPolygon, getPolygonFromElement, getShapeGeometry } from "./slicing";
+
+export interface HighResPngExportOptions {
+  width?: number;
+  height?: number;
+  type: "composite" | "grating" | "single_zone" | "frame_sequence";
+  targetZoneId?: string;
+  frameIndex?: number;
+  phase?: number;
+  slicingScale?: number;
+}
+
+/**
+ * Clips a 4-corner bar rectangle to a boundary polygon, returning closed sub-polygons.
+ */
+export function generateClosedBarPolygons(
+  bbox: { x: number; y: number; width: number; height: number },
+  polygon: { x: number; y: number }[],
+  settings: ZoneSettings,
+  slicingScale = 1.0,
+  phase = 0.0,
+  useBars = true
+): { x: number; y: number }[][] {
+  const frameCount = Math.max(1, settings?.frameCount || 6);
+  const windowWidth = Math.max(0.01, settings?.windowWidth || 0.5);
+  const validScale = Math.max(0.001, slicingScale || 1.0);
+  const thetaDeg = settings?.revealDirection?.angle || 0;
+  const cx = bbox.x + bbox.width / 2;
+  const cy = bbox.y + bbox.height / 2;
+  const diag = Math.max(1, Math.sqrt(bbox.width * bbox.width + bbox.height * bbox.height) * 1.3);
+
+  const angleRad = (thetaDeg * Math.PI) / 180;
+  const nx = Math.cos(angleRad);
+  const ny = Math.sin(angleRad);
+  const tx = -Math.sin(angleRad);
+  const ty = Math.cos(angleRad);
+
+  const pitch = Math.max(0.1, frameCount * windowWidth * validScale);
+  let barThickness = Math.max(0.1, windowWidth * validScale);
+  if (useBars) {
+    barThickness = Math.max(0.1, pitch - barThickness);
+  }
+  const halfThickness = barThickness / 2;
+
+  const closedPolygons: { x: number; y: number }[][] = [];
+  const steps = Math.min(600, Math.max(1, Math.ceil(diag / pitch) + 2));
+
+  for (let i = -steps; i <= steps; i++) {
+    const offset = (i + phase) * pitch;
+    const px = cx + offset * nx;
+    const py = cy + offset * ny;
+
+    // Centerline endpoints
+    const x1 = px - diag * tx;
+    const y1 = py - diag * ty;
+    const x2 = px + diag * tx;
+    const y2 = py + diag * ty;
+
+    // Clip centerline to boundary polygon
+    const clippedCenterlines = clipLineToPolygon({ x1, y1, x2, y2 }, polygon);
+
+    for (const segment of clippedCenterlines) {
+      // Expand segment into a 4-vertex closed polygon box
+      const p1 = { x: segment.x1 - nx * halfThickness, y: segment.y1 - ny * halfThickness };
+      const p2 = { x: segment.x2 - nx * halfThickness, y: segment.y2 - ny * halfThickness };
+      const p3 = { x: segment.x2 + nx * halfThickness, y: segment.y2 + ny * halfThickness };
+      const p4 = { x: segment.x1 + nx * halfThickness, y: segment.y1 + ny * halfThickness };
+
+      closedPolygons.push([p1, p2, p3, p4]);
+    }
+  }
+
+  return closedPolygons;
+}
+
+/**
+ * Generates clean, closed-curve SVG string suitable for Cricut Design Space and laser cutters.
+ */
+export function generateCricutClosedCurveSvg(
+  svgViewBox: string,
+  zones: SVGZoneInfo[],
+  zoneSettings: Record<string, ZoneSettings>,
+  selectedZoneId: string | null = null,
+  slicingScale = 1.0,
+  slicingPhase = 0.0,
+  slicingMode: "cutting" | "bars" | "wireframe" | "both" = "bars"
+): string {
+  const targetZones = selectedZoneId
+    ? zones.filter((z) => z.id === selectedZoneId)
+    : zones.filter((z) => {
+        const s = zoneSettings[z.id];
+        const name = s?.zoneName || z.defaultName;
+        return name !== "Rect #1" && z.defaultName !== "Rect #1";
+      });
+
+  let closedPathsD = "";
+  let outerBoundariesD = "";
+
+  for (const zone of targetZones) {
+    const shapeEl = document.querySelector(`[data-zone-id="${zone.id}"]`) as SVGElement;
+    if (!shapeEl) continue;
+
+    const settings = zoneSettings[zone.id];
+    if (!settings) continue;
+
+    const { bbox, polygon } = getShapeGeometry(shapeEl);
+    if (polygon.length < 3) continue;
+
+    // Outer boundary path
+    let outerD = `M ${polygon[0].x.toFixed(2)} ${polygon[0].y.toFixed(2)} `;
+    for (let i = 1; i < polygon.length; i++) {
+      outerD += `L ${polygon[i].x.toFixed(2)} ${polygon[i].y.toFixed(2)} `;
+    }
+    outerD += "Z ";
+    outerBoundariesD += outerD;
+
+    // If this zone is set to Solid mode, fill the entire contour as a solid shape
+    if (settings.isSolid) {
+      closedPathsD += outerD;
+      continue;
+    }
+
+    // Closed bar polygons
+    const barPolys = generateClosedBarPolygons(
+      bbox,
+      polygon,
+      settings,
+      slicingScale,
+      slicingPhase,
+      slicingMode === "bars"
+    );
+
+    for (const poly of barPolys) {
+      let d = `M ${poly[0].x.toFixed(2)} ${poly[0].y.toFixed(2)} `;
+      for (let i = 1; i < poly.length; i++) {
+        d += `L ${poly[i].x.toFixed(2)} ${poly[i].y.toFixed(2)} `;
+      }
+      d += "Z ";
+      closedPathsD += d;
+    }
+  }
+
+  return `<?xml version="1.0" encoding="utf-8"?>
+<!-- Generated by Scanimation Studio - 100% Clean Closed Curves for Cricut & Lasers -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="${svgViewBox}" width="100%" height="100%">
+  <g id="cricut-outer-contours" fill="none" stroke="#000000" stroke-width="1.0">
+    <desc>Closed Outer Contours for Outer Cut / Silhouette</desc>
+    <path d="${outerBoundariesD.trim()}" />
+  </g>
+  <g id="cricut-closed-slices" fill="#000000" stroke="#000000" stroke-width="0.5">
+    <desc>Closed Scanimation Bar Shapes (No open strokes - 100% Cuttable)</desc>
+    <path d="${closedPathsD.trim()}" />
+  </g>
+</svg>`;
+}
+
+/**
+ * Generates an ultra-high-resolution Black & Transparent PNG for Cricut Design Space.
+ * Background is 100% transparent (Alpha=0), markings are solid Black (#000000).
+ */
+export async function renderHighResTransparentPng(
+  svgContent: string,
+  zones: SVGZoneInfo[],
+  zoneSettings: Record<string, ZoneSettings>,
+  zoneArtworks: Record<string, ZoneArtwork> = {},
+  options: HighResPngExportOptions
+): Promise<string> {
+  const exportSize = options.width || 3600; // 3600px default = 12x12 inches at 300 DPI
+
+  const canvas = document.createElement("canvas");
+  canvas.width = exportSize;
+  canvas.height = exportSize;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Could not initialize 2D render context.");
+
+  // Ensure pure transparent background
+  ctx.clearRect(0, 0, exportSize, exportSize);
+
+  // Parse SVG viewBox
+  let minX = 0, minY = 0, vbW = 500, vbH = 500;
+  if (svgContent) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgContent, "image/svg+xml");
+    const svgEl = doc.querySelector("svg");
+    const vbStr = svgEl?.getAttribute("viewBox");
+    if (vbStr) {
+      const parts = vbStr.split(/[\s,]+/).map(parseFloat).filter((n) => !isNaN(n));
+      if (parts.length >= 4) {
+        [minX, minY, vbW, vbH] = parts;
+      }
+    }
+  }
+
+  const scale = exportSize / Math.max(vbW, vbH);
+  ctx.save();
+  ctx.scale(scale, scale);
+  ctx.translate(-minX, -minY);
+
+  const targetZones = options.targetZoneId
+    ? zones.filter((z) => z.id === options.targetZoneId)
+    : zones.filter((z) => {
+        const s = zoneSettings[z.id];
+        const name = s?.zoneName || z.defaultName;
+        return name !== "Rect #1" && z.defaultName !== "Rect #1";
+      });
+
+  if (options.type === "grating") {
+    // Render optical barrier slit mask in pure solid black on transparent
+    ctx.fillStyle = "#000000";
+    ctx.strokeStyle = "#000000";
+
+    for (const zone of targetZones) {
+      const shapeEl = document.querySelector(`[data-zone-id="${zone.id}"]`) as SVGElement;
+      if (!shapeEl) continue;
+      const settings = zoneSettings[zone.id];
+      if (!settings) continue;
+
+      const { bbox, polygon } = getShapeGeometry(shapeEl);
+      if (polygon.length < 3) continue;
+
+      const barPolys = generateClosedBarPolygons(
+        bbox,
+        polygon,
+        settings,
+        options.slicingScale || 1.0,
+        options.phase || 0.0,
+        true
+      );
+
+      for (const poly of barPolys) {
+        ctx.beginPath();
+        ctx.moveTo(poly[0].x, poly[0].y);
+        for (let i = 1; i < poly.length; i++) {
+          ctx.lineTo(poly[i].x, poly[i].y);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+  } else if (options.type === "single_zone" || options.type === "composite") {
+    // Render solid black artwork / cuts on transparent
+    ctx.fillStyle = "#000000";
+    ctx.strokeStyle = "#000000";
+
+    for (const zone of targetZones) {
+      const shapeEl = document.querySelector(`[data-zone-id="${zone.id}"]`) as SVGElement;
+      if (!shapeEl) continue;
+      const settings = zoneSettings[zone.id];
+      if (!settings) continue;
+
+      const { bbox, polygon } = getShapeGeometry(shapeEl);
+      if (polygon.length < 3) continue;
+
+      const art = zoneArtworks[zone.id];
+      const targetFrame = options.frameIndex !== undefined ? options.frameIndex : 0;
+      const frameData = art?.frames?.[targetFrame];
+
+      // If user provided image/stroke frame data, draw it masked inside the zone
+      if (frameData?.imageDataUrl) {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        await new Promise<void>((resolve) => {
+          img.onload = () => resolve();
+          img.onerror = () => resolve();
+          img.src = frameData.imageDataUrl!;
+        });
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(polygon[0].x, polygon[0].y);
+        for (let i = 1; i < polygon.length; i++) {
+          ctx.lineTo(polygon[i].x, polygon[i].y);
+        }
+        ctx.closePath();
+        ctx.clip();
+
+        // Draw image in bbox
+        const transform = frameData.imageTransform || { x: 0, y: 0, scale: 1, scaleX: 1, scaleY: 1, rotation: 0 };
+        const cx = bbox.x + bbox.width / 2 + (transform.x || 0);
+        const cy = bbox.y + bbox.height / 2 + (transform.y || 0);
+        const sx = (transform.scale || 1) * (transform.scaleX !== undefined ? transform.scaleX : 1);
+        const sy = (transform.scale || 1) * (transform.scaleY !== undefined ? transform.scaleY : 1);
+
+        ctx.translate(cx, cy);
+        ctx.rotate(((transform.rotation || 0) * Math.PI) / 180);
+        ctx.scale(sx, sy);
+
+        const maxDim = Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height);
+        const fitScale = maxDim > 0 ? Math.min(bbox.width, bbox.height) / maxDim : 1;
+        const drawW = (img.naturalWidth || img.width) * fitScale;
+        const drawH = (img.naturalHeight || img.height) * fitScale;
+
+        ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
+        ctx.restore();
+      } else {
+        // Draw closed bar stripes or solid silhouette
+        const barPolys = generateClosedBarPolygons(
+          bbox,
+          polygon,
+          settings,
+          options.slicingScale || 1.0,
+          options.phase || 0.0,
+          false
+        );
+
+        for (const poly of barPolys) {
+          ctx.beginPath();
+          ctx.moveTo(poly[0].x, poly[0].y);
+          for (let i = 1; i < poly.length; i++) {
+            ctx.lineTo(poly[i].x, poly[i].y);
+          }
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+    }
+  }
+
+  ctx.restore();
+  return canvas.toDataURL("image/png");
+}
+
+/**
+ * Triggers an immediate browser file download for a Blob or DataURL.
+ */
+export function downloadExportFile(dataUrlOrText: string, filename: string, mimeType = "image/png"): void {
+  let url: string;
+  let isBlobUrl = false;
+
+  if (dataUrlOrText.startsWith("data:") || dataUrlOrText.startsWith("blob:")) {
+    url = dataUrlOrText;
+  } else {
+    const blob = new Blob([dataUrlOrText], { type: mimeType });
+    url = URL.createObjectURL(blob);
+    isBlobUrl = true;
+  }
+
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+
+  if (isBlobUrl) {
+    URL.revokeObjectURL(url);
+  }
+}
