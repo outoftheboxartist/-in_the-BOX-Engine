@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "verify": "npm run lint && npm run build"
+    "test": "rm -rf .test-dist && tsc -p tsconfig.tests.json && node -e \"require('node:fs').writeFileSync('.test-dist/package.json', JSON.stringify({type:'commonjs'}))\" && node --test .test-dist/tests/*.test.js",
+    "verify": "npm test && npm run lint && npm run build"
   },
   "dependencies": {
     "gifuct-js": "^2.1.2",
