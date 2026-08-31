@@ -1,0 +1,55 @@
+name: Apply preview hit testing fix
+
+on:
+  push:
+    branches:
+      - fix/preview-layer-hit-testing
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/preview-layer-hit-testing
+
+      - name: Patch SvgCanvas selection behavior
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/components/SvgCanvas.tsx')
+          text = path.read_text()
+
+          old_effect = '''  // Live Scanimation Grating & Wireframe Grid Slices Rendering Overlay\n  useEffect(() => {\n'''
+          new_effect = '''  // Keep preview selection aligned with active animated zones only.\n  useEffect(() => {\n    if (!selectedZoneId) return;\n\n    const settings = zoneSettings[selectedZoneId];\n    const isInactive =\n      !!hiddenZoneIds[selectedZoneId] ||\n      !settings ||\n      !!settings.isSolid ||\n      (settings.frameCount !== undefined && settings.frameCount <= 1);\n\n    if (isInactive) {\n      setHoveredZoneId((current) => (current === selectedZoneId ? null : current));\n      onSelectZone(null);\n    }\n  }, [selectedZoneId, hiddenZoneIds, zoneSettings, onSelectZone]);\n\n  // Live Scanimation Grating & Wireframe Grid Slices Rendering Overlay\n  useEffect(() => {\n'''
+
+          if old_effect not in text:
+              raise SystemExit('Could not find effect insertion point')
+          text = text.replace(old_effect, new_effect, 1)
+
+          old_hit = '''        const isHidden = !!hiddenZoneIds[zone.id];\n        if (isHidden) {\n          targetShape.setAttribute("opacity", "0.08");\n          return;\n        } else {\n          targetShape.setAttribute("opacity", "1");\n        }\n\n        if (!settings) return;\n\n        const fc = settings.frameCount || 6;\n'''
+
+          new_hit = '''        const isHidden = !!hiddenZoneIds[zone.id];\n        const isSolidForSelection =\n          !!settings?.isSolid ||\n          (settings?.frameCount !== undefined && settings.frameCount <= 1);\n\n        if (isHidden) {\n          targetShape.setAttribute("opacity", "0.08");\n          targetShape.setAttribute("pointer-events", "none");\n          return;\n        } else {\n          targetShape.setAttribute("opacity", "1");\n        }\n\n        if (!settings) {\n          targetShape.setAttribute("pointer-events", "none");\n          return;\n        }\n\n        // Hidden and solid/0-1 frame zones must not block clicks from reaching\n        // active animated zones underneath them in preview/select mode.\n        targetShape.setAttribute("pointer-events", isSolidForSelection ? "none" : "auto");\n\n        const fc = settings.frameCount || 6;\n'''
+
+          if old_hit not in text:
+              raise SystemExit('Could not find hit testing block')
+          text = text.replace(old_hit, new_hit, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Commit patch
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/components/SvgCanvas.tsx
+          git commit -m "fix: allow preview clicks through inactive layers"
+          git push
