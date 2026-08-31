@@ -19,6 +19,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FrameArtworkStage } from "./components/FrameArtworkStage";
 import { CruciformIcon } from "./components/CruciformIcon";
 import { generateLinesData, clipLineToPolygon, getPolygonFromElement } from "./utils/slicing";
+import { sanitizeSvg } from "./utils/svgSanitizer";
 import { BASE_WINDOW_PRESETS } from "./utils/curveSizeAdvisor";
 import { decodeGifFromUrl, resampleGifFrames } from "./utils/gifDecoder";
 import { CreatureMotionArchetype } from "./utils/motionSuggester";
@@ -138,8 +139,8 @@ export default function App() {
         if (savedSvgContent && savedZones && savedZoneSettings) {
           if (savedProjectName) setProjectName(savedProjectName);
           if (savedFileName) setFileName(savedFileName);
-          setSvgContent(savedSvgContent);
-          if (savedOriginalSvgContent) setOriginalSvgContent(savedOriginalSvgContent);
+          setSvgContent(sanitizeSvg(savedSvgContent));
+          if (savedOriginalSvgContent) setOriginalSvgContent(sanitizeSvg(savedOriginalSvgContent));
           setZones(JSON.parse(savedZones));
           setZoneSettings(JSON.parse(savedZoneSettings));
           setSelectedZoneId(savedSelectedZoneId || null);
@@ -1203,8 +1204,9 @@ export default function App() {
                 onRenameZone={handleRenameZone}
                 onChangeZoneFrames={handleChangeZoneFrames}
                 onUpdateSvgContent={(newSvg) => {
-                  setSvgContent(newSvg);
-                  setOriginalSvgContent(newSvg);
+                  const safeSvg = sanitizeSvg(newSvg);
+                  setSvgContent(safeSvg);
+                  setOriginalSvgContent(safeSvg);
                   showStatus("✓ Viewport framing baked into print viewBox!", "success");
                 }}
                 showStatus={showStatus}
