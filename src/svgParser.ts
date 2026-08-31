@@ -4,6 +4,7 @@
  */
 
 import { SVGZoneInfo, ZoneSettings } from "./types";
+import { sanitizeSvg } from "./utils/svgSanitizer";
 
 /**
  * Parses an SVG string, finds matches for shapes, injects unique IDs,
@@ -14,9 +15,10 @@ export function instrumentSVG(svgText: string): {
   zones: SVGZoneInfo[];
 } {
   try {
+    const safeSvgText = sanitizeSvg(svgText);
     const parser = new DOMParser();
     // Parse the raw input text
-    const doc = parser.parseFromString(svgText, "image/svg+xml");
+    const doc = parser.parseFromString(safeSvgText, "image/svg+xml");
     
     // Check for parsing errors
     const parserError = doc.querySelector("parsererror");

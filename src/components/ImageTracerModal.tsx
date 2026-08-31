@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { X, Sliders, Image as ImageIcon, Sparkles, RefreshCw, ZoomIn, Eye, Check, Scissors, Layers } from "lucide-react";
 import { traceImageContours } from "../imageTracer";
+import { sanitizeSvg } from "../utils/svgSanitizer";
 
 interface ImageTracerModalProps {
   isOpen: boolean;
@@ -108,7 +109,9 @@ export function ImageTracerModal({
       ctx.drawImage(img, 0, 0, w, h);
 
       try {
-        const svgResult = traceImageContours(canvas, threshold, invert, smoothing, trimOverlaps, minRegionPixels);
+        const svgResult = sanitizeSvg(
+          traceImageContours(canvas, threshold, invert, smoothing, trimOverlaps, minRegionPixels),
+        );
         setPreviewSvg(svgResult);
         
         // Count extracted paths
