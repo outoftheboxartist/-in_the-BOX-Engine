@@ -1,4 +1,4 @@
-import assert from "node:assert/strict";
+import * as assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import type { SVGZoneInfo, ZoneSettings } from "../src/types";
 import {
