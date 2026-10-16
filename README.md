@@ -69,3 +69,20 @@ When a zone is selected, calibrate its properties in the right sidebar panel:
 - `/src/components/ZonePropertiesPanel.tsx`: Target fields and calibration controls for active shapes.
 - `/src/components/ZoneListSidebar.tsx`: Grid filters and template controls for layers.
 - `/src/App.tsx`: Core application layout, global shortcuts, and file loaders.
+
+
+## 🎵 Beat-to-Barrier Motion Lab (companion experiment)
+
+Open **BEAT LAB ↗** from the workspace toolbar or visit `/beat-to-barrier.html` when the Vite app is running.
+
+This is a standalone, browser-local, experimental extension for turning music and visual frames into a moving scanimation barrier. It does not modify your current project or require an API key.
+
+- Start with original **Koi Drift**, **Orbit Eye**, and **Bloom** motion examples, import a PNG/JPEG/WebP image sequence, or import an animated GIF. GIF frames have an offline browser decoder fallback.
+- Load an audio file, inspect candidate beat markers, and sync the barrier by detected beats or an editable BPM pulse. The beat detector is heuristic, so BPM remains adjustable.
+- Set 2–12 frames, slit width in millimeters, preview magnification, and paper size. The physical pitch equals **frames × slit width**. The preview slit size is deliberately independent of print calibration.
+- Export the interlaced lower layer as 300-DPI PNG; export a physically scaled printable transparent barrier as PNG or SVG; or export a **single-piece Cricut cut SVG** with a 4-mm connected border to hold the strips together. The cut file includes slots instead of disjoint bar strips.
+- Export a JSON motion cue sheet with tempo, grid settings, and candidate beat times. All processing runs locally in the browser.
+
+**Physical assembly:** print at *actual size / 100%*, align registration marks between the printed layers, and move the top barrier by one physical slit width per frame. For the single-piece Cricut mask, test whether your material and blade can cut your requested slit width, particularly at the sub-millimeter range. This tool is a prototype and has not been validated against a physical printer or cutter yet.
+
+The music does not animate the physical print automatically. Beat sync is a preview/timing aid for composing, filming, or manually actuating the mask.
