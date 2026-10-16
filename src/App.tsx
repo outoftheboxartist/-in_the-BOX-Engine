@@ -1000,6 +1000,17 @@ export default function App() {
 
         {/* Global Toolbar buttons */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Companion experiment. Opens separately so the active editing session stays intact. */}
+          <a
+            href="/beat-to-barrier.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-1.5 px-3 rounded bg-[#ff459e]/15 hover:bg-[#ff459e]/25 border border-[#ff459e]/50 text-[#ff8fca] transition-all text-[11px] flex items-center gap-1.5 font-bold font-mono"
+            title="Open Beat-to-Barrier Motion Lab: sync your scanimation to audio and export printable layers"
+          >
+            <Film className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">BEAT LAB ↗</span>
+          </a>
           {/* Quick-Help Trigger */}
           <button
             onClick={() => setShowWelcome(true)}
